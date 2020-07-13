@@ -199,6 +199,54 @@ void draw(HWND hwnd) {
 
 
 
+## 2.4 文字的显示
+
+​	因为C++默认的是GDK编码,char*类型的文字类型,但是GDI+需要的是WCHAR(wchar_t)双字节的unicode编码类型,所以需要使用:
+
+```C++
+WCHAR * str = L"测试";
+```
+
+​	进行字符串的初始化,而且给出了WP::wchar2char和char2wchar两个转化函数使用.
+
+
+
+## 2.5 向非窗口的区域绘制
+
+​	GDI+也提供了向非创建的窗口内容绘制(可以是屏幕的任何位置).即hwnd 为 nullptr的时候.所以可以在创建WinCanvas或display(HWND)使用WP::FULL_SCREEN这个宏去向整个屏幕绘制.
+
+```C++
+using namespace WP;
+WinCanvas* w;
+void setup() {
+	w = new WinCanvas(800, 800);	//创建800,800的窗口
+	w->background(0);				//画布的绘制是全黑色的
+}
+
+void draw(HWND hwnd) {
+	w->display(FULL_SCREEN);		//使用FULL_SCREEN向整个屏幕进行绘制
+   	//绘制的位置是0,0宽高为WinCanvas的大小
+}
+```
+
+![image-20200713191407680](https://i.loli.net/2020/07/13/6zh1qwnUVF2bvSI.png)
+
+```C++
+using namespace WP;
+void setup() {
+}
+
+void draw(HWND hwnd) {
+	WinCanvas w(FULL_SCREEN);
+	w.stroke(0, 0, 200);
+	w.strokeWeight(5);
+	w.line(100, 100, w.width - 100, w.height - 100);
+	w.display();
+}
+```
+
+![image-20200713191956875](https://i.loli.net/2020/07/13/RvZoc8nNOrpGXBC.png)
+
 
 
 # 3. 函数的说明
@@ -236,13 +284,21 @@ void display(HWND hWnd); //使用WinCanvas(width,height)创建的对象调用
 
 
 
-## 3.5 beginShape 自定义图像
+## 3.5 beginShape() 自定义图像
 
 ​	其实在WinCanvas中已经给出了两个自定义的图像:quad和triangle.
 
 ​	但是要说明的是:beginShape其实会返回一个`Gdiplus::GraphicsPath*`的值,本意是使用GDI+中提供的更加完善的方法去绘制图像.而在endShape中,将去绘制这个图像的路径,vertex只是暂时保存了这个路径的指定点.
 
 ​	beginContourv也同样是对beginShape的路径处理(绘制方向相反),使用endContour进行的绘制.
+
+
+
+## 3.6 text()函数
+
+​	字符处理给出了WP::wchar2char和char2wchar两个函数去处理字符串.
+
+​	需要注意的是:C++的字符串和其他的类型不再是使用`+`连接.所以可能需要使用到std::to_string()去处理其他的类型到字符串的类型.
 
 
 
@@ -301,7 +357,6 @@ void draw(HWND hwnd) {
 > WinCanvas(hWnd)的测试结果:
 
 ```C++
-using namespace WP;
 void setup() {
 }
 
@@ -373,3 +428,8 @@ void draw(HWND hwnd) {
 
 ​	......(希望大佬解答)
 
+> 一次偶然的测试得到
+
+​	如果在WinCanvas(hwnd)的构造函数使用数值直接对width和height赋值的话(不使用GetClientRect获取到窗口的大小),则效率降低为WinCanvas(width,height).
+
+​	但是在display(hwnd)中使用了GetClientRect并没有达到相应的提速效果.

@@ -6,10 +6,16 @@ WP::WinCanvas::WinCanvas(const HWND hWnd)
 	:_hWnd(hWnd), _isRelesed(false), _isHaveHwnd(true), _renderer(new Renderer()),
 	_textFont(new Gdiplus::FontFamily(L"Arial")) {
 	_hdc = ::GetDC(_hWnd);
-	RECT rect;
-	::GetClientRect(_hWnd, &rect);
-	this->width = unsigned int(rect.right - rect.left);
-	this->height = unsigned int(rect.bottom - rect.top);
+	if (_hWnd != WP::FULL_SCREEN) {
+		RECT rect;
+		::GetClientRect(_hWnd, &rect);
+		this->width = unsigned int(rect.right - rect.left);
+		this->height = unsigned int(rect.bottom - rect.top);
+	}
+	else {
+		this->width = ::GetSystemMetrics(SM_CXSCREEN);
+		this->height = ::GetSystemMetrics(SM_CYSCREEN);
+	}
 	_bmp = new Gdiplus::Bitmap(this->width, this->height);
 	_ghsptr = new Gdiplus::Graphics(_bmp);
 	_ghsptr->SetSmoothingMode(Gdiplus::SmoothingModeAntiAlias);
@@ -64,7 +70,6 @@ void WP::WinCanvas::display(HWND hWnd) {//每次hwnd都是不同的
 	Gdiplus::Graphics* g = new Gdiplus::Graphics(hdc);
 	Gdiplus::CachedBitmap cachedBmp(_bmp, g);
 	g->DrawCachedBitmap(&cachedBmp, 0, 0);
-	/*g->DrawImage(_bmp, 0, 0);*/
 	delete g;
 	g = nullptr;
 	ReleaseDC(hWnd, hdc);
