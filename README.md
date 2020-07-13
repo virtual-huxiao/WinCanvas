@@ -1,1 +1,375 @@
-WinCanvas
+[TOC]
+
+------
+
+# 1.WinCanvas是什么
+
+​	这只是一个简单的对`Windows GDI+`绘制方式的一个封装.封装为[P5.js](https://p5js.org/zh-Hans/)的绘制方式.
+
+​	方便使用Windows API去制作[openProcessing](https://www.openprocessing.org/)上的内容.
+
+# 2.基本的使用
+
+## 2.1 整体的框架
+
+​	与P5.js绘制方式类似,主要集中在setup和draw函数的内容中.
+
+​	在一个windows API实现的窗口中如下:
+
+```C++
+#include<Windows.h>
+#include<tchar.h>
+#include<string>
+#include<vector>
+#include "WinCanvas.h"
+#define PRINT_TO_VS_CONSOLE	//使用此宏,可以在vs编辑器下打印错误信息
+
+constexpr int WIDTH = 800;
+constexpr int HEIGHT = 800;
+
+using namespace WP;
+void setup() {//只执行一次
+}
+
+void draw(HWND hwnd) {//每次触发绘制时执行
+}
+
+//1.注册窗口
+LRESULT CALLBACK WinMessageProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam);//回调函数(系统调用)
+
+int WINAPI _tWinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPTSTR lpCmdLine, int nShowCmd) {
+	Gdiplus::GdiplusStartupInput gdiplusStartupInput;
+	ULONG_PTR           gdiplusToken;
+
+	// 加载 GDI+.
+	GdiplusStartup(&gdiplusToken, &gdiplusStartupInput, NULL);
+
+	try {
+		setup();
+	} catch (const std::exception& e) {
+#ifdef PRINT_TO_VS_CONSOLE
+		//向visual stuido输出错误信息
+		char chInput[1024];
+		sprintf_s(chInput, 1024, "error:%s\n", e.what());
+		OutputDebugStringA(chInput);
+#endif
+		exit(0);
+	}
+
+	WNDCLASSEX wndclassex;
+
+	wndclassex.cbSize = sizeof(WNDCLASSEX);					  				                       //窗口类的内存大小
+	wndclassex.style = 0;									  									                       //样式
+	wndclassex.lpfnWndProc = WinMessageProc;					                               //定义窗口处理函数
+	wndclassex.cbClsExtra = 0;									  						                       //窗口的类扩展
+	wndclassex.cbWndExtra = 0;									  									                 //窗口实例无扩展
+	wndclassex.hInstance = hInstance;							  							                   //当前语句把柄
+	wndclassex.hIcon = LoadIcon(nullptr, IDI_APPLICATION);	                         //窗口最小化图标(为缺省)
+	wndclassex.hCursor = LoadCursor(nullptr, IDC_ARROW);		  					             //窗口的箭头光标
+	wndclassex.hbrBackground = (HBRUSH)(GetStockObject(WHITE_BRUSH));                //窗口的背景为白色
+	wndclassex.lpszMenuName = nullptr;		                                           //无菜单
+	wndclassex.lpszClassName = _T("ClassName");						  	                       //窗口类名
+	wndclassex.hIconSm = LoadIcon(nullptr, IDI_APPLICATION);	                       //窗口菜单栏图标
+
+	if (!RegisterClassEx(&wndclassex)) {//注册窗口(0为失败)
+		MessageBox(nullptr, _T("窗口注册失败"), _T("出错"), MB_OK);
+	}
+	//设置窗口居中的运算
+	int scrWidth = ::GetSystemMetrics(SM_CXSCREEN);
+	int scrHeight = ::GetSystemMetrics(SM_CYSCREEN);
+	int windowX = (scrWidth - WIDTH) / 2;
+	int windowY = (scrHeight - HEIGHT) / 2;
+
+	//2.创建窗口
+	HWND newWind = CreateWindowEx(	                        //创建窗口函数,返回为null为失败
+		0L,						  	  						                      //是否需要扩展样式,0L不需要
+		_T("ClassName"),		  	  			                      //注册窗口类的名字
+		_T("WindowTitle"),		  	  		                      //窗口的标题
+		WS_OVERLAPPEDWINDOW,	  	  		                      //窗口的样式,一半主窗口都是这个
+		windowX, windowY, WIDTH, HEIGHT,			  			        //x,y,width,heigh
+		nullptr,				  	  					                      //父窗口
+		nullptr,				  	  					                      //菜单的句柄
+		hInstance,				  	  				                      //这个是WinMain的第一个参数
+		nullptr					  	  					                      //额外数据,不设置,所以为null
+	);
+	if (!newWind) {					  				                      //注册窗口(0为失败)
+		MessageBox(nullptr, _T("窗口注册失败"), _T("出错"), MB_OK);
+	}
+	ShowWindow(newWind, nShowCmd);
+	UpdateWindow(newWind);
+
+	//3.消息循环
+	MSG msg;
+	while (GetMessage(&msg, nullptr, 0, 0)) {
+		TranslateMessage(&msg);
+		DispatchMessage(&msg);
+	}
+	//关闭 GDI+
+	Gdiplus::GdiplusShutdown(gdiplusToken);
+	return 0;
+}
+
+//4.处理消息
+LRESULT CALLBACK WinMessageProc(HWND hwnd, UINT msg, WPARAM wParam, LPARAM lParam) {
+	switch (msg) {
+	case WM_DESTROY: {
+		PostQuitMessage(0);
+		break;
+	}
+	case WM_PAINT: {
+		try {
+			draw(hwnd);
+		} catch (const std::exception& e) {
+#ifdef PRINT_TO_VS_CONSOLE
+			//向visual stuido输出错误信息
+			char chInput[1024];
+			sprintf_s(chInput, 1024, "error:%s\n", e.what());
+			OutputDebugStringA(chInput);
+#endif
+			exit(0);
+		}
+		break;
+	}
+	case WM_ERASEBKGND: {
+		return 1;//取消窗口的重置背景
+	}
+	default:
+		return DefWindowProc(hwnd, msg, wParam, lParam);
+	}
+	return 0;
+}
+```
+
+​	没办法,创建一个自己的窗口就是那么的多代码....
+
+​	**不过我们之后的所以行为都不会再修改setup和draw之外的内容.这样更好的去专注绘制而不是窗口.**
+
+## 2.2 基本绘制
+
+​	绘制的方式和P5唯一的不同就是WinCanvas需要使用`display()`去将内容绘制到窗口.
+
+​	绘制的方式依旧是有两种:一次绘制,无数次显示; 和一次绘制,一次显示.但是目前存在一个[问题](##使用WinCanvas(width,height)和WinCanvas(hWnd)的效率问题).
+
+### 2.2.1 一次绘制,无数次显示
+
+```C++
+using namespace WP;
+WinCanvas* w;
+void setup() {
+	w = new WinCanvas(800, 800);	//创建和窗口同大的画布
+	w->background(0);							//画布的绘制是全黑色的
+}
+
+void draw(HWND hwnd) {
+	w->display(hwnd);							//向指定的窗口绘制
+}
+```
+
+![image-20200713123310406](https://i.loli.net/2020/07/13/6yUi45dTBGfh3cC.png)
+
+
+
+### 2.2.2 一次绘制一次显示
+
+```C++
+using namespace WP;
+void setup() {
+}
+
+void draw(HWND hwnd) {
+	WinCanvas w(hwnd);	//获取到窗口,会自动创建和窗口同大的画布
+	w.background(0);
+	w.display();				//显示到WinCanvas创建时指定的窗口
+}
+```
+
+​	效果和2.2.1是一致的.
+
+## 2.3 错误提示
+
+​	当你使用了:
+
+```C++
+#define PRINT_TO_VS_CONSOLE
+```
+
+​	当遇到错误的时候会将错误打印到visual studio的输出栏中.当遇到意外退出或窗口关闭的话可以去看看输出栏中给出的错误提示.
+
+![image-20200713124311076](https://i.loli.net/2020/07/13/oBxlqjDZJI2ifLd.png)
+
+
+
+
+
+# 3. 函数的说明
+
+## 3.1 大部分函数的使用说明
+
+​	因为是为了实现P5.js,所以可以在[p5.js参考](https://p5js.org/zh-Hans/reference/)中找到相同函数的使用方式.下面的函数说明均是不同的实现.
+
+
+
+## 3.2 dispaly
+
+​	这个函数是最大的不同.因为一个窗口的HWND是变化的,像极了抓不到的致富之遇.所以,在draw函数中,应该使用这个函数去指定将WinCanvas绘制到哪个窗口.
+
+```C++
+void display();			//使用WinCanvas(HWND)创建的对象调用
+void display(HWND hWnd); //使用WinCanvas(width,height)创建的对象调用
+```
+
+
+
+## 3.3 push()和pop()
+
+​	这两个函数会将所有的绘制属性(颜色填充字体大小等)以及变形(平移缩放旋转)都将保存和恢复.可以去[p5.js参考](https://p5js.org/zh-Hans/reference/)中查看他们的用法.
+
+​	在WinCanvas中,因为不会再对每帧进行变形的重置,所以请使用他们进行更安全的绘制.
+
+
+
+## 3.4 point()
+
+​	绘制点的函数,将不再和p5.js中受到属性的影响(除了socket设置的颜色),point将只对指定的像素单位进行涂色.
+
+​	原因:这是因为GDI+最小的绘制单位是线(以给出的API)而无point的绘制,为了使用,所以获取了BitMap的一个像素进行了处理.
+
+
+
+## 3.5 beginShape 自定义图像
+
+​	其实在WinCanvas中已经给出了两个自定义的图像:quad和triangle.
+
+​	但是要说明的是:beginShape其实会返回一个`Gdiplus::GraphicsPath*`的值,本意是使用GDI+中提供的更加完善的方法去绘制图像.而在endShape中,将去绘制这个图像的路径,vertex只是暂时保存了这个路径的指定点.
+
+​	beginContourv也同样是对beginShape的路径处理(绘制方向相反),使用endContour进行的绘制.
+
+
+
+# 一些常见的问题
+
+## 为什么要使用`Windows GDI+`而不是`Windows GDI`
+
+​	GDI的绘制方式和HTML5中的Canvas绘制方式很近,但是放弃GDI的最本质的原因是:透明度的支持.
+
+​	GDI+相对GDI给我更大的感觉是更简便和全面.
+
+
+
+
+
+# 遗留问题
+
+## 使用WinCanvas(width,height)和WinCanvas(hWnd)的效率问题
+
+​	这是一个很奇怪的问题(起码对我来说).使用两种不同的方式去绘制,但是两种方式只是`::GetDC(hWnd)`获取的时间不同.
+
+​	WinCanvas(width,height);的方式是在display(hwnd)进行显示的时候获取并在显示之后释放的,而WinCanvas(hWnd)是在一开始的时候就获取了,但是只是保存了hdc在display()的时候进行使用,在close()中释放.
+
+​	最后测试发现绘制的显示中的`g->DrawCachedBitmap(&cachedBmp, 0, 0);`去绘制的时候两个消耗的时间是WinCanvas(hWnd):WinCanvas(width,height) = 1:4;
+
+> WinCanvas(width,height)的测试结果
+
+```C++
+WinCanvas* w;
+void setup() {
+	w = new WinCanvas(800, 800);
+}
+
+void draw(HWND hwnd) {
+	w->background(0);
+	w->display(hwnd);
+}
+```
+
+​	以下为测试结果(不取前3次绘时间):
+
+![image-20200713114530956](https://i.loli.net/2020/07/13/6bPoVZwAB1Eury9.png)
+
+
+
+![image-20200713114727898](https://i.loli.net/2020/07/13/wGeapxnLcFifZkU.png)
+
+
+
+![image-20200713115127850](https://i.loli.net/2020/07/13/FGvasrNb2LfliyV.png)
+
+​	最后测试帧数稳定在43帧.
+
+
+
+> WinCanvas(hWnd)的测试结果:
+
+```C++
+using namespace WP;
+void setup() {
+}
+
+void draw(HWND hwnd) {
+	WinCanvas* w = new WinCanvas(hwnd);
+	w->background(0);
+	w->display();
+	delete w;
+	w = nullptr;
+}
+```
+
+​	以下为测试结果(不取前3次绘时间):
+
+![image-20200713115817163](https://i.loli.net/2020/07/13/kMUsZhF8RWbgnzp.png)
+
+
+
+![image-20200713115842694](https://i.loli.net/2020/07/13/ulOaMvIoUqrYjFJ.png)
+
+
+
+![image-20200713120318068](https://i.loli.net/2020/07/13/m7EJCfjkQ6KOsPg.png)
+
+​	加上其他窗口事件的消耗,那么帧率应该稳定在100帧.
+
+
+
+​	我以为是`::GetDc(hWnd)`,获取的时间不同造成的.但是使用以下方式进行测试的时候,发现两者又出奇的一致(任选非前3次绘制):
+
+```C++
+#define DRAW_THEN_GETDC
+
+#ifdef DRAW_THEN_GETDC
+Gdiplus::Bitmap* bmp;
+Gdiplus::Graphics* ghsptr;
+#endif // DRAW_THEN_GETDC
+
+void setup() {
+#ifdef DRAW_THEN_GETDC
+	bmp = new Gdiplus::Bitmap(800, 800);
+	ghsptr = new Gdiplus::Graphics(bmp);
+#endif
+}
+
+void draw(HWND hwnd) {
+	HDC hdc = ::GetDC(hwnd);
+#ifdef DRAW_THEN_GETDC
+	ghsptr->Clear(Gdiplus::Color(0, 0, 0));
+#else	//GETDC 后 绘制
+	Gdiplus::Bitmap* bmp = new Gdiplus::Bitmap(800, 800);
+	Gdiplus::Graphics* ghsptr = new Gdiplus::Graphics(bmp);
+	ghsptr->Clear(Gdiplus::Color(0, 0, 0));
+#endif
+	Gdiplus::Graphics* g = new Gdiplus::Graphics(hdc);
+	Gdiplus::CachedBitmap cachedBmp(bmp, g);
+	g->DrawCachedBitmap(&cachedBmp, 0, 0);
+#ifndef DRAW_THEN_GETDC
+	delete bmp;
+	delete ghsptr;
+#endif
+	delete g;
+	g = nullptr;
+	::ReleaseDC(hwnd, hdc);
+}
+```
+
+​	但是这次测试两种绘制方式又出奇的一致近1:1.(&*$#&*$&#*$&*#&!)
+
+​	......(希望大佬解答)
+
