@@ -67,9 +67,17 @@ void WP::WinCanvas::display() {
 void WP::WinCanvas::display(HWND hWnd) {//每次hwnd都是不同的
 	_judgeVaild();
 	HDC hdc = ::GetDC(hWnd);
+	RECT rect;
+	::GetClientRect(hWnd, &rect);
+	//保护当克隆区域(实时窗口的大小)大于实际的绘制区域(clone会报错)时,不再出现错误
+	int offw = this->width - rect.right; offw = offw > 0 ? 0 : offw;
+	int offh = this->height - rect.bottom; offh = offh > 0 ? 0 : offh;
+	Gdiplus::Bitmap* bmptem = _bmp->Clone(Gdiplus::Rect(rect.left, rect.top, rect.right + offw, rect.bottom + offh), PixelFormatDontCare);
 	Gdiplus::Graphics* g = new Gdiplus::Graphics(hdc);
-	Gdiplus::CachedBitmap cachedBmp(_bmp, g);
+	Gdiplus::CachedBitmap cachedBmp(bmptem, g);
 	g->DrawCachedBitmap(&cachedBmp, 0, 0);
+	delete bmptem;
+	bmptem = nullptr;
 	delete g;
 	g = nullptr;
 	ReleaseDC(hWnd, hdc);

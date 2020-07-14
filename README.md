@@ -316,6 +316,8 @@ void display(HWND hWnd); //使用WinCanvas(width,height)创建的对象调用
 
 # 遗留问题
 
+## (已经解决以下问题)
+
 ## 使用WinCanvas(width,height)和WinCanvas(hWnd)的效率问题
 
 ​	这是一个很奇怪的问题(起码对我来说).使用两种不同的方式去绘制,但是两种方式只是`::GetDC(hWnd)`获取的时间不同.
@@ -433,3 +435,104 @@ void draw(HWND hwnd) {
 ​	如果在WinCanvas(hwnd)的构造函数使用数值直接对width和height赋值的话(不使用GetClientRect获取到窗口的大小),则效率降低为WinCanvas(width,height).
 
 ​	但是在display(hwnd)中使用了GetClientRect并没有达到相应的提速效果.
+
+### 已解决
+
+​	不得不说,闭源是真的没好处.
+
+​	谁也想不到一个[GetClientRect](https://docs.microsoft.com/en-us/windows/win32/api/winuser/nf-winuser-getclientrect)的使用与否竟然是造成这个问题的关键问题.查了半天的微软文档也没发现说什么,但是实际测试里面确确时时出现了效率4倍的情况.
+
+```C++
+#define DRAW_THEN_GETDC
+
+#ifdef DRAW_THEN_GETDC
+Gdiplus::Bitmap* bmp_base;
+Gdiplus::Graphics* ghsptr;
+#endif // DRAW_THEN_GETDC
+
+void setup() {
+#ifdef DRAW_THEN_GETDC
+	bmp_base = new Gdiplus::Bitmap(800, 800);
+	ghsptr = new Gdiplus::Graphics(bmp_base);
+#endif
+}
+
+void draw(HWND hwnd) {
+	RECT rect;
+	::GetClientRect(hwnd, &rect);	//获取窗口的信息
+
+#ifdef DRAW_THEN_GETDC
+	ghsptr->Clear(Gdiplus::Color(0, 0, 0));
+	Gdiplus::Bitmap* bmp = bmp_base->Clone(Gdiplus::Rect(rect.left, rect.top, rect.right, rect.bottom), PixelFormatDontCare);
+    HDC hdc = ::GetDC(hwnd);
+#else	//GETDC 后 绘制
+	HDC hdc = ::GetDC(hwnd);
+	Gdiplus::Bitmap* bmp = new Gdiplus::Bitmap(rect.right - rect.left, rect.bottom - rect.top);
+	Gdiplus::Graphics* ghsptr = new Gdiplus::Graphics(bmp);
+	ghsptr->Clear(Gdiplus::Color(0, 0, 0));
+#endif
+
+	Gdiplus::Graphics* g = new Gdiplus::Graphics(hdc);
+	Gdiplus::CachedBitmap cachedBmp(bmp, g);
+	g->DrawCachedBitmap(&cachedBmp, 0, 0);	//最耗时的一步
+	delete g;
+
+	//战后清理
+#ifndef DRAW_THEN_GETDC
+	delete bmp;
+	delete ghsptr;
+#else
+	delete bmp;
+#endif
+
+	::ReleaseDC(hwnd, hdc);
+}
+```
+
+​	这个是最有说明的内容了,他是上一个代码的优化,只是添加了`GetClientRect`这个函数的使用,**并在其之后创建一个近似同大小的`BitMap`**,那么情况就会出现为:
+
+> 开启了`DRAW_THEN_GETDC`(先绘制后使用GetDC向窗口内显示),老样子不取前3次
+
+![image-20200714111146322](https://i.loli.net/2020/07/14/SCdE7VR3FgOeDzo.png)
+
+![image-20200714111213746](https://i.loli.net/2020/07/14/askfbERdxZiA9qj.png)
+
+![image-20200714111239138](https://i.loli.net/2020/07/14/FTZ2L71XaGmiKAw.png)
+
+> 关闭了`DRAW_THEN_GETDC`(先使用GetDC后绘制向窗口内显示),老样子不取前3次
+
+![image-20200714111518451](https://i.loli.net/2020/07/14/5OTFXjahBSsukwQ.png)
+
+![image-20200714111545049](https://i.loli.net/2020/07/14/a2kdqJOMyANhSpb.png)
+
+![image-20200714111624805](https://i.loli.net/2020/07/14/bY2O7mf5RxCsPFy.png)
+
+​	终于达到了1:1且都是高帧数的效果了.(我太难了)
+
+> 依照此结果修改了display(hwnd)测试结果如下:
+
+![image-20200714112231480](https://i.loli.net/2020/07/14/3A2dDpsaTeFPvN6.png)
+
+​	ohhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhhh!
+
+### 结案报告
+
+​	只是解决了效率问题,很多人都会问为什么.其实在无法看到GetClientRect和BitMap的内部的时候,我们也不能妄下结论,甚至只能去猜测:GetClientRect不仅获取了窗口的客户的的信息,同时还激活了同等大小的一个"快速绘制区域",这个区域在之后的BitMap创建的时候指定了它,所以加快了效率.
+
+​	但是这样说的话还是有两个问题:
+
+​	1.如果窗口大小是:800X800,那么依旧使用GetClientRect,BitMap在Clone的时候第一个参数修改为:`Gdiplus::Rect(rect.left, rect.top,800, 800)`这个和rect.right,rect.bottom的值是一样的.但是测试后的效率依旧是低效率的.
+
+​	2.如果说是同样大小的话,那么:`Gdiplus::Rect(rect.left, rect.top, rect.right -1, rect.bottom -1)`也是高效率的状态,但是他和"快速绘制区域"大小不等.
+
+​	`dislay(HWND)`使用了第2个问题的情况处理了当使用`Clone`克隆区域大于绘制区域的情况处理:
+
+```C++
+	//保护当克隆区域(实时窗口的大小)大于实际的绘制区域(clone会报错)时,不再出现错误
+	int offw = this->width - rect.right; offw = offw > 0 ? 0 : offw;
+	int offh = this->height - rect.bottom; offh = offh > 0 ? 0 : offh;
+	Gdiplus::Bitmap* bmptem = _bmp->Clone(Gdiplus::Rect(rect.left, rect.top, rect.right + offw, rect.bottom + offh), PixelFormatDontCare);
+```
+
+​	测试后dislay(HWND)依旧是高效率的绘制状态.
+
