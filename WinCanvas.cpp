@@ -69,12 +69,14 @@ void WP::WinCanvas::display(HWND hWnd) {//每次hwnd都是不同的
 	HDC hdc = ::GetDC(hWnd);
 	RECT rect;
 	::GetClientRect(hWnd, &rect);
+	//高效的绘制方式(修复后的):
 	//保护当克隆区域(实时窗口的大小)大于实际的绘制区域(clone会报错)时,不再出现错误
 	int offw = this->width - rect.right; offw = offw > 0 ? 0 : offw;
 	int offh = this->height - rect.bottom; offh = offh > 0 ? 0 : offh;
 	Gdiplus::Bitmap* bmptem = _bmp->Clone(Gdiplus::Rect(rect.left, rect.top, rect.right + offw, rect.bottom + offh), PixelFormatDontCare);
+	//以上内容确确实实修复了效率问题
 	Gdiplus::Graphics* g = new Gdiplus::Graphics(hdc);
-	Gdiplus::CachedBitmap cachedBmp(bmptem, g);
+	Gdiplus::CachedBitmap cachedBmp(bmptem, g);	//低效率的绘制方式是:直接将_bmp传入参数
 	g->DrawCachedBitmap(&cachedBmp, 0, 0);
 	delete bmptem;
 	bmptem = nullptr;
